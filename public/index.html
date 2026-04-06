@@ -161,6 +161,8 @@
     let receivingChannelFinished = {};
     let receivingChannelCount = PARALLEL_CHANNELS;
     let receivingProgressElements = new Map();
+    let progressBroadcastInterval = null;
+    let progressChannel = null;
 
     function isChromeOrEdge() {
       const ua = navigator.userAgent.toLowerCase();
@@ -369,6 +371,14 @@
           setupDataChannel(dc, i);
         }
         
+        const progressCh = pc.createDataChannel('progress', { 
+          ordered: true,
+          id: PARALLEL_CHANNELS
+        });
+        progressCh._channelId = PARALLEL_CHANNELS;
+        dataChannels.push(progressCh);
+        setupDataChannel(progressCh, PARALLEL_CHANNELS);
+        
         pc.createOffer({ iceRestart: true })
           .then(offer => pc.setLocalDescription(offer))
           .then(() => ws.send(JSON.stringify({ type: 'offer', offer: pc.localDescription })))
@@ -379,9 +389,13 @@
     function setupDataChannel(channel, channelId) {
       channel._channelId = channelId;
       channel.bufferedAmountLowThreshold = 512 * 1024;
+      const totalChannels = isInitiator ? PARALLEL_CHANNELS + 1 : PARALLEL_CHANNELS;
       channel.onopen = () => {
         console.log('DataChannel ' + channelId + ' opened');
-        if (dataChannels.filter(c => c.readyState === 'open').length === PARALLEL_CHANNELS) {
+        if (channelId === PARALLEL_CHANNELS) {
+          progressChannel = channel;
+        }
+        if (dataChannels.filter(c => c.readyState === 'open').length === totalChannels) {
           updateStatus('已连接', 'connected');
         }
       };
@@ -432,6 +446,20 @@
               updateStatus(`正在接收: ${receivingFileInfo.name}`, 'waiting');
               createReceiveProgressUI(receivingFileInfo.fileId, receivingFileInfo.name, receivingFileInfo.size);
             }
+            
+            progressBroadcastInterval = setInterval(() => {
+              if (receivingFileInfo && isReceiving && progressChannel && progressChannel.readyState === 'open') {
+                const totalReceived = Object.values(receivingChunksByChannel)
+                  .reduce((sum, chunks) => sum + chunks.reduce((s, c) => s + (c.data.byteLength || c.data.size), 0), 0);
+                const receivedSize = receivingFileInfo.receivedSize || totalReceived;
+                progressChannel.send(JSON.stringify({
+                  type: 'progress-update',
+                  fileId: receivingFileInfo.fileId,
+                  bytesReceived: receivedSize,
+                  totalSize: receivingFileInfo.size
+                }));
+              }
+            }, 200);
             break;
             
           case 'file-end':
@@ -441,6 +469,11 @@
               Object.values(receivingChannelFinished).every(v => v === true);
             
             if (allFinished) {
+              if (progressBroadcastInterval) {
+                clearInterval(progressBroadcastInterval);
+                progressBroadcastInterval = null;
+              }
+              
               if (writableStream) {
                 try {
                   await writableStream.close();
@@ -481,6 +514,19 @@
             break;
             
           case 'file-received':
+            break;
+            
+          case 'progress-update':
+            const percent = Math.min((msg.bytesReceived / msg.totalSize) * 100, 100).toFixed(1);
+            const fill = document.getElementById(`progress-${msg.fileId}`);
+            if (fill) fill.style.width = percent + '%';
+            
+            const receivedMB = (msg.bytesReceived / 1024 / 1024).toFixed(1);
+            const totalMB = (msg.totalSize / 1024 / 1024).toFixed(1);
+            const textElem = document.getElementById(`progress-text-${msg.fileId}`);
+            if (textElem) {
+              textElem.textContent = `对方已接收: ${receivedMB}MB / ${totalMB}MB (${percent}%)`;
+            }
             break;
         }
       } else if (data instanceof ArrayBuffer || data instanceof Blob) {
