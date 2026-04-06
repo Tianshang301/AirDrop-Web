@@ -389,13 +389,14 @@
     function setupDataChannel(channel, channelId) {
       channel._channelId = channelId;
       channel.bufferedAmountLowThreshold = 512 * 1024;
-      const totalChannels = isInitiator ? PARALLEL_CHANNELS + 1 : PARALLEL_CHANNELS;
       channel.onopen = () => {
         console.log('DataChannel ' + channelId + ' opened');
         if (channelId === PARALLEL_CHANNELS) {
           progressChannel = channel;
+          console.log('Progress channel set:', channel);
         }
-        if (dataChannels.filter(c => c.readyState === 'open').length === totalChannels) {
+        const totalChannels = PARALLEL_CHANNELS + 1;
+        if (dataChannels.filter(c => c.readyState === 'open').length >= totalChannels) {
           updateStatus('已连接', 'connected');
         }
       };
@@ -448,16 +449,23 @@
             }
             
             progressBroadcastInterval = setInterval(() => {
-              if (receivingFileInfo && isReceiving && progressChannel && progressChannel.readyState === 'open') {
+              if (receivingFileInfo && isReceiving) {
                 const totalReceived = Object.values(receivingChunksByChannel)
                   .reduce((sum, chunks) => sum + chunks.reduce((s, c) => s + (c.data.byteLength || c.data.size), 0), 0);
                 const receivedSize = receivingFileInfo.receivedSize || totalReceived;
-                progressChannel.send(JSON.stringify({
-                  type: 'progress-update',
-                  fileId: receivingFileInfo.fileId,
-                  bytesReceived: receivedSize,
-                  totalSize: receivingFileInfo.size
-                }));
+                
+                const sendCh = progressChannel && progressChannel.readyState === 'open' 
+                  ? progressChannel 
+                  : dataChannels.find(c => c.readyState === 'open');
+                
+                if (sendCh) {
+                  sendCh.send(JSON.stringify({
+                    type: 'progress-update',
+                    fileId: receivingFileInfo.fileId,
+                    bytesReceived: receivedSize,
+                    totalSize: receivingFileInfo.size
+                  }));
+                }
               }
             }, 200);
             break;
