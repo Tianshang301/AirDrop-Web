@@ -700,24 +700,7 @@
       sendFileList.appendChild(fileItem);
 
       const startTime = performance.now();
-      let totalBytesSent = 0;
       let finishedChannels = 0;
-      let updateInterval = setInterval(() => {
-        totalBytesSent = channelRanges.reduce((sum, r) => sum + r.bytesSent, 0);
-        const percent = Math.min((totalBytesSent / totalSize) * 100, 100);
-        const fill = document.getElementById(`progress-${fileId}`);
-        if (fill) fill.style.width = percent + '%';
-        
-        const now = performance.now();
-        const elapsed = (now - startTime) / 1000;
-        const speedMBps = elapsed > 0 ? (totalBytesSent / 1024 / 1024 / elapsed).toFixed(1) : '0';
-        const sentMB = (totalBytesSent / 1024 / 1024).toFixed(1);
-        const totalMB = (totalSize / 1024 / 1024).toFixed(1);
-        const textElem = document.getElementById(`progress-text-${fileId}`);
-        if (textElem) {
-          textElem.textContent = `${sentMB}MB / ${totalMB}MB (${speedMBps}MB/s)`;
-        }
-      }, 200);
 
       channels.forEach(ch => {
         ch.bufferedAmountLowThreshold = 512 * 1024;
@@ -738,23 +721,6 @@
         return new Promise(resolve => {
           channel._drainResolve = resolve;
         });
-      }
-
-      function updateProgress() {
-        totalBytesSent = channelRanges.reduce((sum, r) => sum + r.bytesSent, 0);
-        const percent = Math.min((totalBytesSent / totalSize) * 100, 100);
-        const fill = document.getElementById(`progress-${fileId}`);
-        if (fill) fill.style.width = percent + '%';
-        
-        const now = performance.now();
-        const elapsed = (now - startTime) / 1000;
-        const speedMBps = elapsed > 0 ? (totalBytesSent / 1024 / 1024 / elapsed).toFixed(1) : '0';
-        const sentMB = (totalBytesSent / 1024 / 1024).toFixed(1);
-        const totalMB = (totalSize / 1024 / 1024).toFixed(1);
-        const textElem = document.getElementById(`progress-text-${fileId}`);
-        if (textElem) {
-          textElem.textContent = `${sentMB}MB / ${totalMB}MB (${speedMBps}MB/s)`;
-        }
       }
 
       function sendFileEnd(range) {
@@ -814,7 +780,6 @@
             finishedChannels++;
             
             if (finishedChannels === channels.length) {
-              if (updateInterval) clearInterval(updateInterval);
               setTimeout(() => {
                 const textElem = document.getElementById(`progress-text-${fileId}`);
                 if (textElem) {
