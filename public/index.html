@@ -160,6 +160,7 @@
     let receivingChunksByChannel = {};
     let receivingChannelFinished = {};
     let receivingChannelCount = PARALLEL_CHANNELS;
+    let receivingProgressElements = new Map();
 
     function isChromeOrEdge() {
       const ua = navigator.userAgent.toLowerCase();
@@ -425,9 +426,11 @@
                   console.error('showSaveFilePicker error:', err);
                 }
                 updateStatus('用户取消保存，改为内存接收模式', 'waiting');
+                createReceiveProgressUI(receivingFileInfo.fileId, receivingFileInfo.name, receivingFileInfo.size);
               }
             } else {
               updateStatus(`正在接收: ${receivingFileInfo.name}`, 'waiting');
+              createReceiveProgressUI(receivingFileInfo.fileId, receivingFileInfo.name, receivingFileInfo.size);
             }
             break;
             
@@ -441,15 +444,11 @@
               if (writableStream) {
                 try {
                   await writableStream.close();
-                  const item = document.createElement('div');
-                  item.className = 'received-item';
-                  item.innerHTML = `
-                    <div>
-                      <div class="file-name">${escapeHtml(receivingFileInfo.name)}</div>
-                      <div class="file-size">${formatSize(receivingFileInfo.size)} (已保存到磁盘)</div>
-                    </div>
-                  `;
-                  receivedList.appendChild(item);
+                  updateReceiveProgress(receivingFileInfo.fileId, receivingFileInfo.size, receivingFileInfo.size);
+                  const progressEl = receivingProgressElements.get(receivingFileInfo.fileId);
+                  if (progressEl) {
+                    progressEl.text.textContent = `已保存到磁盘`;
+                  }
                   updateStatus('已收到文件: ' + receivingFileInfo.name, 'connected');
                 } catch (err) {
                   console.error('writableStream.close error:', err);
@@ -463,7 +462,7 @@
                 const sortedData = allChunks.map(c => c.data);
                 if (sortedData.length > 0) {
                   const blob = new Blob(sortedData, { type: receivingFileInfo.mimeType });
-                  downloadFile(blob, receivingFileInfo.name, receivingFileInfo.size);
+                  downloadFile(blob, receivingFileInfo.name, receivingFileInfo.size, receivingFileInfo.fileId);
                 }
               }
 
@@ -495,6 +494,7 @@
               receivingFileInfo.receivedSize = (receivingFileInfo.receivedSize || 0) + chunkSize;
               const percent = ((receivingFileInfo.receivedSize / receivingFileInfo.size) * 100).toFixed(1);
               updateStatus(`接收中: ${receivingFileInfo.name} (${percent}%)`, 'waiting');
+              updateReceiveProgress(receivingFileInfo.fileId, receivingFileInfo.receivedSize, receivingFileInfo.size);
             } catch (err) {
               console.error('writableStream.write error:', err);
               if (!receivingChunksByChannel[channelId]) {
@@ -517,25 +517,73 @@
               .reduce((sum, chunks) => sum + chunks.reduce((s, c) => s + (c.data.byteLength || c.data.size), 0), 0);
             const percent = ((totalReceived / receivingFileInfo.size) * 100).toFixed(1);
             updateStatus(`接收中: ${receivingFileInfo.name} (${percent}%)`, 'waiting');
+            updateReceiveProgress(receivingFileInfo.fileId, totalReceived, receivingFileInfo.size);
           }
         }
       }
     }
 
-    function downloadFile(blob, filename, fileSize) {
-      const fileId = Date.now() + Math.random().toString(36).substr(2, 9);
+    function downloadFile(blob, filename, fileSize, fileId) {
       receivedBlobs.set(fileId, blob);
       const item = document.createElement('div');
       item.className = 'received-item';
+      item.style.flexDirection = 'column';
+      item.style.alignItems = 'stretch';
       item.innerHTML = `
-        <div>
-          <div class="file-name">${escapeHtml(filename)}</div>
-          <div class="file-size">${formatSize(fileSize)}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div>
+            <div class="file-name">${escapeHtml(filename)}</div>
+            <div class="file-size">${formatSize(fileSize)}</div>
+          </div>
+          <button class="download-btn" onclick="reDownload('${fileId}', '${escapeHtml(filename)}')">下载</button>
         </div>
-        <button class="download-btn" onclick="reDownload('${fileId}', '${escapeHtml(filename)}')">下载</button>
+        <div class="progress-container">
+          <div class="progress-bar"><div class="progress-fill" id="recv-progress-${fileId}"></div></div>
+          <div class="progress-text" id="recv-progress-text-${fileId}">等待接收...</div>
+        </div>
       `;
       receivedList.appendChild(item);
+      receivingProgressElements.set(fileId, {
+        fill: item.querySelector(`#recv-progress-${fileId}`),
+        text: item.querySelector(`#recv-progress-text-${fileId}`)
+      });
       updateStatus('已收到文件: ' + filename, 'connected');
+    }
+
+    function createReceiveProgressUI(fileId, filename, fileSize) {
+      if (receivingProgressElements.has(fileId)) return;
+      const item = document.createElement('div');
+      item.className = 'received-item';
+      item.style.flexDirection = 'column';
+      item.style.alignItems = 'stretch';
+      item.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div>
+            <div class="file-name">${escapeHtml(filename)}</div>
+            <div class="file-size">${formatSize(fileSize)}</div>
+          </div>
+        </div>
+        <div class="progress-container">
+          <div class="progress-bar"><div class="progress-fill" id="recv-progress-${fileId}"></div></div>
+          <div class="progress-text" id="recv-progress-text-${fileId}">等待接收...</div>
+        </div>
+      `;
+      receivedList.appendChild(item);
+      receivingProgressElements.set(fileId, {
+        fill: item.querySelector(`#recv-progress-${fileId}`),
+        text: item.querySelector(`#recv-progress-text-${fileId}`)
+      });
+    }
+
+    function updateReceiveProgress(fileId, received, total) {
+      const progressEl = receivingProgressElements.get(fileId);
+      if (progressEl) {
+        const percent = Math.min((received / total) * 100, 100).toFixed(1);
+        const receivedMB = (received / 1024 / 1024).toFixed(1);
+        const totalMB = (total / 1024 / 1024).toFixed(1);
+        progressEl.fill.style.width = percent + '%';
+        progressEl.text.textContent = `${receivedMB}MB / ${totalMB}MB (${percent}%)`;
+      }
     }
 
     function sendQueuedFiles() {
