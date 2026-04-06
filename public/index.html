@@ -525,7 +525,7 @@
             const totalMB = (msg.totalSize / 1024 / 1024).toFixed(1);
             const textElem = document.getElementById(`progress-text-${msg.fileId}`);
             if (textElem) {
-              textElem.textContent = `对方已接收: ${receivedMB}MB / ${totalMB}MB (${percent}%)`;
+              textElem.textContent = `发送中: ${receivedMB}MB / ${totalMB}MB (${percent}%)`;
             }
             break;
         }
