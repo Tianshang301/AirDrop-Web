@@ -1,0 +1,14 @@
+{
+  "name": "airdrop-web",
+  "version": "1.0.0",
+  "description": "基于WebRTC的跨平台文件传输工具",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["webrtc", "file-transfer", "p2p"],
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.14.2"
+  }
+}
