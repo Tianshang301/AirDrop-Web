@@ -480,7 +480,18 @@
                   updateReceiveProgress(receivingFileInfo.fileId, receivingFileInfo.size, receivingFileInfo.size);
                   const progressEl = receivingProgressElements.get(receivingFileInfo.fileId);
                   if (progressEl) {
-                    progressEl.text.textContent = `已保存到磁盘`;
+                    const parentEl = progressEl.fill.closest('.received-item');
+                    if (parentEl) {
+                      const headerDiv = parentEl.querySelector('div');
+                      if (headerDiv && !headerDiv.querySelector('.download-btn')) {
+                        headerDiv.innerHTML = `
+                          <div>
+                            <div class="file-name">${escapeHtml(receivingFileInfo.name)}</div>
+                            <div class="file-size">${formatSize(receivingFileInfo.size)} (已保存到磁盘)</div>
+                          </div>
+                        `;
+                      }
+                    }
                   }
                   updateStatus('已收到文件: ' + receivingFileInfo.name, 'connected');
                 } catch (err) {
@@ -572,28 +583,47 @@
 
     function downloadFile(blob, filename, fileSize, fileId) {
       receivedBlobs.set(fileId, blob);
-      const item = document.createElement('div');
-      item.className = 'received-item';
-      item.style.flexDirection = 'column';
-      item.style.alignItems = 'stretch';
-      item.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div>
-            <div class="file-name">${escapeHtml(filename)}</div>
-            <div class="file-size">${formatSize(fileSize)}</div>
+      
+      const existingProgressEl = receivingProgressElements.get(fileId);
+      if (existingProgressEl) {
+        const parentEl = existingProgressEl.fill.closest('.received-item');
+        if (parentEl) {
+          const headerDiv = parentEl.querySelector('div');
+          if (headerDiv) {
+            headerDiv.innerHTML = `
+              <div>
+                <div class="file-name">${escapeHtml(filename)}</div>
+                <div class="file-size">${formatSize(fileSize)}</div>
+              </div>
+              <button class="download-btn" onclick="reDownload('${fileId}', '${escapeHtml(filename)}')">下载</button>
+            `;
+          }
+          existingProgressEl.text.textContent = `已接收完成`;
+        }
+      } else {
+        const item = document.createElement('div');
+        item.className = 'received-item';
+        item.style.flexDirection = 'column';
+        item.style.alignItems = 'stretch';
+        item.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div>
+              <div class="file-name">${escapeHtml(filename)}</div>
+              <div class="file-size">${formatSize(fileSize)}</div>
+            </div>
+            <button class="download-btn" onclick="reDownload('${fileId}', '${escapeHtml(filename)}')">下载</button>
           </div>
-          <button class="download-btn" onclick="reDownload('${fileId}', '${escapeHtml(filename)}')">下载</button>
-        </div>
-        <div class="progress-container">
-          <div class="progress-bar"><div class="progress-fill" id="recv-progress-${fileId}"></div></div>
-          <div class="progress-text" id="recv-progress-text-${fileId}">等待接收...</div>
-        </div>
-      `;
-      receivedList.appendChild(item);
-      receivingProgressElements.set(fileId, {
-        fill: item.querySelector(`#recv-progress-${fileId}`),
-        text: item.querySelector(`#recv-progress-text-${fileId}`)
-      });
+          <div class="progress-container">
+            <div class="progress-bar"><div class="progress-fill" id="recv-progress-${fileId}"></div></div>
+            <div class="progress-text" id="recv-progress-text-${fileId}">已接收完成</div>
+          </div>
+        `;
+        receivedList.appendChild(item);
+        receivingProgressElements.set(fileId, {
+          fill: item.querySelector(`#recv-progress-${fileId}`),
+          text: item.querySelector(`#recv-progress-text-${fileId}`)
+        });
+      }
       updateStatus('已收到文件: ' + filename, 'connected');
     }
 
