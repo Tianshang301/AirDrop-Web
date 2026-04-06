@@ -489,9 +489,9 @@
           const chunkSize = chunkData.byteLength || chunkData.size;
           
           if (writableStream) {
+            receivingFileInfo.receivedSize = (receivingFileInfo.receivedSize || 0) + chunkSize;
             try {
               await writableStream.write(chunkData);
-              receivingFileInfo.receivedSize = (receivingFileInfo.receivedSize || 0) + chunkSize;
               const percent = ((receivingFileInfo.receivedSize / receivingFileInfo.size) * 100).toFixed(1);
               updateStatus(`接收中: ${receivingFileInfo.name} (${percent}%)`, 'waiting');
               updateReceiveProgress(receivingFileInfo.fileId, receivingFileInfo.receivedSize, receivingFileInfo.size);
@@ -502,16 +502,17 @@
               }
               receivingChunksByChannel[channelId].push({
                 data: chunkData,
-                offset: receivingFileInfo.receivedSize || 0
+                offset: receivingFileInfo.receivedSize - chunkSize
               });
             }
           } else {
+            receivingFileInfo.receivedSize = (receivingFileInfo.receivedSize || 0) + chunkSize;
             if (!receivingChunksByChannel[channelId]) {
               receivingChunksByChannel[channelId] = [];
             }
             receivingChunksByChannel[channelId].push({
               data: chunkData,
-              offset: receivingFileInfo.receivedSize || 0
+              offset: receivingFileInfo.receivedSize - chunkSize
             });
             const totalReceived = Object.values(receivingChunksByChannel)
               .reduce((sum, chunks) => sum + chunks.reduce((s, c) => s + (c.data.byteLength || c.data.size), 0), 0);
