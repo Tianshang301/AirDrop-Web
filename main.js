@@ -10,7 +10,12 @@ let server;
 
 function getValidIPs() {
   const validIPs = [];
-  const excludePatterns = [/virtualbox/i, /vmware/i, /hyper-v/i, /docker/i, /vpn/i, /tunnel/i, /loopback/i, /virtual/i, /veth/i, /bridge/i];
+  const excludePatterns = [/virtualbox/i, /vmware/i, /hyper-v/i, /docker/i, /vpn/i, /tunnel/i, /loopback/i, /virtual/i, /veth/i, /bridge/i, /本地连接/i, /移动热点/i];
+  
+  const excludeSubnets = [
+    '192.168.137',
+    '169.254'
+  ];
   
   const interfaces = os.networkInterfaces();
   
@@ -19,7 +24,8 @@ function getValidIPs() {
     for (const info of iface) {
       if (info.family === 'IPv4' && !info.internal) {
         const isExcluded = excludePatterns.some(p => p.test(name) || p.test(info.address));
-        if (!isExcluded && !info.address.startsWith('169.254.')) {
+        const isExcludedSubnet = excludeSubnets.some(subnet => info.address.startsWith(subnet));
+        if (!isExcluded && !isExcludedSubnet) {
           validIPs.push({
             name: name,
             address: info.address
