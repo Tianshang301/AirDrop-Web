@@ -61,11 +61,6 @@
     .qr-tip { font-size: 13px; color: #666; margin-bottom: 12px; }
     .btn-secondary { padding: 8px 20px; border: 2px solid #ccc; border-radius: 8px; background: white; color: #666; cursor: pointer; font-size: 13px; transition: all 0.3s; }
     .btn-secondary:hover { border-color: #999; color: #333; }
-    .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-    .modal-content { background: white; border-radius: 12px; width: 90%; max-width: 400px; overflow: hidden; }
-    .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid #eee; }
-    .modal-header h3 { margin: 0; font-size: 16px; }
-    .modal-close { font-size: 24px; cursor: pointer; color: #999; }
     @media (max-width: 480px) { .container { border-radius: 0; min-height: 100vh; } .header { border-radius: 0; } }
   </style>
 </head>
@@ -81,7 +76,6 @@
           <input type="text" id="roomInput" placeholder="输入房间号" maxlength="6">
         </div>
         <button class="btn btn-primary" id="joinBtn">连接</button>
-        <button class="btn btn-secondary" id="scanQrBtn" style="margin-top: 10px;">扫描二维码</button>
         <div id="qrCodeArea" class="qr-area hidden">
           <div id="qrCodeContainer" class="qr-code"></div>
           <p class="qr-tip">用手机扫码快速连接</p>
@@ -113,7 +107,6 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js" crossorigin="anonymous"></script>
   <script>
     const CHUNK_SIZE = 256 * 1024;
     const BUFFER_AHEAD = 32;
@@ -910,72 +903,6 @@
     roomInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') joinRoom(); });
     hideQrBtn.addEventListener('click', hideQRCode);
     
-    let html5QrcodeScanner = null;
-    let scannedQrResult = null;
-    
-    const scanQrBtn = document.getElementById('scanQrBtn');
-    const scanModal = document.getElementById('scanModal');
-    const closeScanBtn = document.getElementById('closeScanBtn');
-    const reader = document.getElementById('reader');
-    const scanResult = document.getElementById('scanResult');
-    const resultUrl = document.getElementById('resultUrl');
-    const confirmScanBtn = document.getElementById('confirmScanBtn');
-    const cancelScanBtn = document.getElementById('cancelScanBtn');
-    
-    function openScanModal() {
-      scanModal.classList.remove('hidden');
-      scanResult.classList.add('hidden');
-      reader.classList.remove('hidden');
-      
-      html5QrcodeScanner = new Html5Qrcode("reader");
-      html5QrcodeScanner.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => {
-          html5QrcodeScanner.stop().then(() => {
-            scannedQrResult = decodedText;
-            reader.classList.add('hidden');
-            scanResult.classList.remove('hidden');
-            resultUrl.textContent = decodedText;
-          });
-        },
-        (errorMessage) => {}
-      ).catch(err => {
-        console.error("Failed to start scanner:", err);
-        alert('无法启动摄像头，请确保已授予相机权限');
-        closeScanModal();
-      });
-    }
-    
-    function closeScanModal() {
-      if (html5QrcodeScanner) {
-        html5QrcodeScanner.stop().catch(() => {});
-      }
-      scanModal.classList.add('hidden');
-    }
-    
-    scanQrBtn.addEventListener('click', openScanModal);
-    closeScanBtn.addEventListener('click', closeScanModal);
-    cancelScanBtn.addEventListener('click', closeScanModal);
-    
-    confirmScanBtn.addEventListener('click', () => {
-      if (scannedQrResult) {
-        try {
-          const url = new URL(scannedQrResult);
-          const room = url.searchParams.get('room');
-          if (room) {
-            roomInput.value = room;
-            closeScanModal();
-            joinRoom();
-          } else {
-            alert('未找到房间号参数');
-          }
-        } catch (e) {
-          alert('无效的URL格式');
-        }
-      }
-    });
-    
     checkUrlParam();
     
     fetch('/api/ip')
@@ -988,20 +915,5 @@
       })
       .catch(err => console.error('Failed to get server IP:', err));
   </script>
-  
-  <div id="scanModal" class="modal hidden">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3>扫描二维码</h3>
-        <span class="modal-close" id="closeScanBtn">&times;</span>
-      </div>
-      <div id="reader" style="width: 100%;"></div>
-      <div id="scanResult" class="hidden" style="padding: 15px; text-align: center;">
-        <p id="resultUrl" style="word-break: break-all; margin-bottom: 15px; color: #666;"></p>
-        <button class="btn btn-primary" id="confirmScanBtn">确认连接</button>
-        <button class="btn btn-secondary" id="cancelScanBtn" style="margin-left: 10px;">取消</button>
-      </div>
-    </div>
-  </div>
 </body>
 </html>
