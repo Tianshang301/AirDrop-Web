@@ -113,7 +113,7 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js" crossorigin="anonymous"></script>
   <script>
     const CHUNK_SIZE = 256 * 1024;
     const BUFFER_AHEAD = 32;
@@ -178,8 +178,9 @@
     }
 
     function getWsUrl() {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      return `${protocol}//${window.location.host}`;
+      const protocol = 'ws:';
+      const host = serverIP || window.location.hostname || 'localhost';
+      return `${protocol}//${host}:3000`;
     }
 
     function updateStatus(text, type) {
