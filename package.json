@@ -2,13 +2,51 @@
   "name": "airdrop-web",
   "version": "1.0.0",
   "description": "基于WebRTC的跨平台文件传输工具",
-  "main": "server.js",
+  "author": "AirDrop Web Team",
+  "main": "main.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "electron .",
+    "dev": "node server.js",
+    "build": "electron-builder --win",
+    "pack": "electron-builder --dir"
   },
   "keywords": ["webrtc", "file-transfer", "p2p"],
   "license": "MIT",
   "dependencies": {
     "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.airdropweb.app",
+    "productName": "AirDrop Web",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "server.js",
+      "public/**/*",
+      "node_modules/ws/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AirDrop Web",
+      "installerIcon": null,
+      "uninstallerIcon": null
+    }
   }
 }

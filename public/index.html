@@ -900,6 +900,16 @@
     roomInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') joinRoom(); });
     hideQrBtn.addEventListener('click', hideQRCode);
     checkUrlParam();
+    
+    fetch('/api/ip')
+      .then(r => r.json())
+      .then(data => {
+        if (data.ips && data.ips.length > 0) {
+          const ip = data.ips[0].address;
+          updateStatus(`局域网: http://${ip}:3000`, 'connected');
+        }
+      })
+      .catch(err => console.error('Failed to get server IP:', err));
   </script>
 </body>
 </html>
