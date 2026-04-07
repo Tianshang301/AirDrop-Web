@@ -10,9 +10,16 @@
     "build": "electron-builder --win",
     "pack": "electron-builder --dir"
   },
-  "keywords": ["webrtc", "file-transfer", "p2p"],
+  "keywords": [
+    "webrtc",
+    "file-transfer",
+    "p2p"
+  ],
   "license": "MIT",
   "dependencies": {
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/cli": "^8.3.0",
+    "@capacitor/core": "^8.3.0",
     "ws": "^8.14.2"
   },
   "devDependencies": {
@@ -35,7 +42,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
