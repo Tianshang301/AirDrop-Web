@@ -98,7 +98,7 @@ sequenceDiagram
     B->>S: 7. 发送Answer (SDP)
     S->>A: 8. 转发Answer
     A->>B: 9. ICE Candidate交换 (P2P打洞)
-    A<->B: 10. WebRTC DataChannel 直连建立
+    A<<->>B: 10. WebRTC DataChannel 直连建立
     A->>B: 11. 发送文件（分块二进制传输）
 ```
 
