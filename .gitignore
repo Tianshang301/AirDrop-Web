@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+*.exe
+*.dll
+*.pak
+*.bin
+
+# IDE
+android/.idea/
+android/.gradle/
+android/app/build/
+android/build/
+
+# Logs
+*.log
+error.log
+
+# OS files
+.DS_Store
+Thumbs.db

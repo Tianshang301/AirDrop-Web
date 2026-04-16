@@ -36,7 +36,8 @@
       "main.js",
       "server.js",
       "public/**/*",
-      "node_modules/ws/**/*"
+      "node_modules/ws/**/*",
+      "node_modules/qrcodejs/**/*"
     ],
     "win": {
       "target": [

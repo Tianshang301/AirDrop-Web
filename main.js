@@ -5,6 +5,15 @@ const fs = require('fs');
 const os = require('os');
 const WebSocket = require('ws');
 
+process.on('uncaughtException', (error) => {
+  console.error('未捕获的错误:', error);
+  fs.appendFileSync(path.join(__dirname, 'error.log'), `${new Date().toISOString()} - ${error.stack}\n`);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('未处理的Promise拒绝:', reason);
+});
+
 let mainWindow;
 let server;
 
@@ -156,6 +165,10 @@ function createWindow() {
 
   mainWindow.loadURL('http://localhost:3000');
 
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('页面加载失败:', errorCode, errorDescription);
+  });
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
@@ -167,8 +180,13 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  server = startServer();
-  createWindow();
+  try {
+    server = startServer();
+    createWindow();
+  } catch (err) {
+    console.error('启动错误:', err);
+    app.quit();
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
