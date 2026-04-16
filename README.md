@@ -1,3 +1,9 @@
+# README.md
+- en [English](README.md)
+- zh_CN [简体中文](readme/README.zh_CN.md)
+
+---
+
 # 📁 AirDrop Web
 
 A browser-based, peer-to-peer file transfer tool powered by WebRTC. Transfer files between any devices—no apps, no cables, just open and share.
@@ -28,17 +34,17 @@ A browser-based, peer-to-peer file transfer tool powered by WebRTC. Transfer fil
 
 ```
 airdrop-web/
-├── README.md           # This file
-├── README-zh.md        # 中文说明
-├── package.json        # Dependencies
-├── server.js           # WebSocket signaling server
+├── README.md                  # This file
+├── README-zh_CN.md            # 中文说明
+├── package.json               # Dependencies
+├── server.js                  # WebSocket signaling server
 ├── public/
-│   ├── index.html      # Main page
+│   ├── index.html            # Main page
 │   ├── css/
-│   │   └── style.css  # Styles
+│   │   └── style.css         # Styles
 │   └── js/
-│       └── app.js     # Frontend logic
-└── dist/               # Build output
+│       └── app.js            # Frontend logic
+└── dist/                     # Build output
 ```
 
 ## 🚀 Quick Start

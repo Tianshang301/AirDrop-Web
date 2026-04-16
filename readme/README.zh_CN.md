@@ -28,17 +28,17 @@
 
 ```
 airdrop-web/
-├── README.md           # 英文说明
-├── README-zh.md        # 本文件
-├── package.json        # 依赖配置
-├── server.js           # WebSocket 信令服务器
+├── README.md                  # 英文说明
+├── README-zh_CN.md            # 中文说明
+├── package.json               # 依赖配置
+├── server.js                  # WebSocket 信令服务器
 ├── public/
-│   ├── index.html      # 主页面
+│   ├── index.html             # 主页面
 │   ├── css/
-│   │   └── style.css  # 样式文件
+│   │   └── style.css          # 样式文件
 │   └── js/
-│       └── app.js     # 前端逻辑
-└── dist/               # 构建输出
+│       └── app.js             # 前端逻辑
+└── dist/                      # 构建输出
 ```
 
 ## 🚀 快速开始
