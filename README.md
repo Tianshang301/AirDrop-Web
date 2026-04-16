@@ -1,207 +1,174 @@
-这是您所需的“手机电脑文件互传”网页端小程序的完整项目代码。它基于WebRTC技术，允许同一局域网下的设备通过浏览器直接、安全地传输文件。
+# 📁 AirDrop Web
 
-```markdown
-# 📁 AirDrop Web - 跨平台文件传输助手
+A browser-based, peer-to-peer file transfer tool powered by WebRTC. Transfer files between any devices—no apps, no cables, just open and share.
 
-一个基于WebRTC的零配置、点对点文件传输工具，无需安装任何APP，仅需浏览器即可在手机、电脑、平板等设备间快速传输文件。
+![Demo](https://via.placeholder.com/800x400?text=Mobile+%E2%86%94+PC+File+Transfer)
 
-![演示效果](https://via.placeholder.com/800x400?text=Mobile+%E2%86%94+PC+File+Transfer)
+## ✨ Features
 
-## ✨ 特性
+- 🔒 **P2P Encrypted** - Files transfer directly between devices via WebRTC DataChannel
+- 📱 **Works Everywhere** - Any modern browser (Chrome, Safari, Edge, Firefox)
+- 🚀 **LAN Speed** - Direct connection utilizes full local bandwidth
+- 💡 **Zero Setup** - 3 steps: open page → enter room code → connect
+- 📦 **Any File Size** - Chunked transfer supports GB-sized files
+- 📊 **Live Progress** - Real-time transfer progress tracking
+- 🎨 **Responsive** - Adapts seamlessly to mobile and desktop screens
 
-- 🔒 **点对点加密**：使用WebRTC DataChannel，数据不经服务器中转，保障隐私安全
-- 📱 **全平台支持**：任何现代浏览器（Chrome / Safari / Edge / Firefox）均可使用
-- 🚀 **极速传输**：局域网内直连，充分利用本地带宽
-- 💡 **零配置**：打开网页、输入房间号、连接，三步完成
-- 📦 **大文件支持**：自动分块传输，支持GB级文件
-- 📊 **传输进度**：实时显示发送/接收进度
-- 🎨 **响应式设计**：完美适配手机竖屏与电脑宽屏
+## 🛠️ Tech Stack
 
-## 🛠️ 技术栈
+| Component      | Technology                     |
+|----------------|--------------------------------|
+| Frontend       | HTML5 + CSS3 + Vanilla JS      |
+| Real-time Comm | WebRTC (DataChannel)           |
+| Signaling      | Node.js + WebSocket (ws)       |
+| NAT Traversal  | Google STUN Server             |
+| File Handling  | File API + Blob + ArrayBuffer  |
 
-| 组件          | 技术选型                     |
-| ------------- | ---------------------------- |
-| 前端          | HTML5 + CSS3 + Vanilla JS    |
-| 实时通信      | WebRTC (DataChannel)         |
-| 信令服务      | Node.js + WebSocket (ws库)   |
-| NAT穿透       | Google STUN 服务器            |
-| 文件处理      | File API + Blob + ArrayBuffer |
-
-## 📦 项目结构
+## 📁 Project Structure
 
 ```
-
 airdrop-web/
-├── README.md              # 项目文档
-├── package.json           # 依赖及脚本
-├── server.js            # WebSocket信令服务器
-├── main.js              # Electron 主进程 (可选)
+├── README.md           # This file
+├── README-zh.md        # 中文说明
+├── package.json        # Dependencies
+├── server.js           # WebSocket signaling server
 ├── public/
-│   ├── index.html       # 主页面
+│   ├── index.html      # Main page
 │   ├── css/
-│   │   └── style.css   # 样式文件
+│   │   └── style.css  # Styles
 │   └── js/
-│       └── app.js      # 前端逻辑
-└── dist/                # 构建输出目录
-
+│       └── app.js     # Frontend logic
+└── dist/               # Build output
 ```
 
-airdrop-web/
-├── README.md          # 项目文档
-├── package.json       # 依赖及脚本
-├── server.js          # WebSocket信令服务器
-└── public/
-    └── index.html     # 前端应用（包含样式与逻辑）
+## 🚀 Quick Start
 
-```
+### Requirements
 
-## 🚀 快速开始
+- Node.js v14+
+- Modern browser with WebRTC support
 
-### 环境要求
-
-- Node.js (v14 或更高版本)
-- 现代浏览器（支持WebRTC）
-
-### 安装与运行
-
-1. **克隆或下载项目代码**
+### Run
 
 ```bash
-git clone https://github.com/yourname/airdrop-web.git
-cd airdrop-web
-```
-
-2. **安装依赖**
-
-```bash
+git clone https://github.com/Tianshang301/AirDrop-Web.git
+cd AirDrop-Web
 npm install
-```
-
-3. **启动信令服务器**
-
-```bash
 npm start
 ```
 
-服务器默认运行在 `http://localhost:3000`，控制台会输出访问地址。
+Server starts at `http://localhost:3000`.
 
-4. **在同一局域网下访问**
-- 手机与电脑连接同一个Wi-Fi
-- 电脑访问 `http://localhost:3000`（或本机IP，如 `http://192.168.1.100:3000`）
-- 手机浏览器扫码或直接输入电脑IP地址加端口号
-5. **开始传输**
-- 在任意设备上输入相同的**房间号**（例如 `123456`）
-- 点击“连接”按钮，等待配对成功（状态变为“已连接”）
-- 选择文件并发送，另一设备会自动接收并提示下载
+### Connect Devices
 
-> 💡 **提示**：如果无法连接，请检查防火墙是否允许3000端口，或尝试更换房间号重新连接。
+1. Connect phone and computer to the same Wi-Fi
+2. Open the app URL on both devices
+3. Enter the same **room code** on both (e.g., `123456`)
+4. Click "Connect" → transfer files!
 
-## 🧠 工作原理
+> 💡 **Tip**: Can't connect? Check firewall settings for port 3000, or try a different room code.
+
+## 🧠 How It Works
 
 ```mermaid
 sequenceDiagram
-    participant A as 设备A (手机)
-    participant S as 信令服务器 (Node.js)
-    participant B as 设备B (电脑)
+    participant A as Device A (Phone)
+    participant S as Signaling Server
+    participant B as Device B (PC)
 
-    A->>S: 1. 加入房间 (RoomId)
-    B->>S: 2. 加入同一房间
-    S->>A: 3. 通知已有对端
-    S->>B: 4. 通知已有对端
-    A->>S: 5. 发送Offer (SDP)
-    S->>B: 6. 转发Offer
-    B->>S: 7. 发送Answer (SDP)
-    S->>A: 8. 转发Answer
-    A->>B: 9. ICE Candidate交换 (P2P打洞)
-    A<<->>B: 10. WebRTC DataChannel 直连建立
-    A->>B: 11. 发送文件（分块二进制传输）
+    A->>S: 1. Join Room
+    B->>S: 2. Join Same Room
+    S->>A: 3. Peer Found
+    S->>B: 4. Peer Found
+    A->>S: 5. Send Offer (SDP)
+    S->>B: 6. Forward Offer
+    B->>S: 7. Send Answer (SDP)
+    S->>A: 8. Forward Answer
+    A->>S: 9. ICE Candidates
+    S->>B: 10. ICE Candidates
+    A<<->>B: 11. P2P Connection Established
+    A->>B: 12. File Transfer
 ```
 
-- **信令服务器**仅负责交换连接元数据（SDP与ICE候选），不参与文件传输。
-- 建立连接后，文件数据直接在设备之间传输，速度仅取决于局域网性能。
+The signaling server only exchanges connection metadata (SDP/ICE). All file data flows directly peer-to-peer.
 
-## 📱 使用截图
+## 📱 Screenshots
 
-| 连接界面                                                        | 文件传输                                                           |
-|:-----------------------------------------------------------:|:--------------------------------------------------------------:|
-| ![连接界面](https://via.placeholder.com/300x600?text=Join+Room) | ![传输进度](https://via.placeholder.com/300x600?text=Sending+File) |
+| Connection | Transfer |
+|:----------:|:--------:|
+| ![Connect](https://via.placeholder.com/300x600?text=Join+Room) | ![Transfer](https://via.placeholder.com/300x600?text=Sending+File) |
 
-## ⚙️ 配置说明
+## ⚙️ Configuration
 
-### 修改STUN服务器
+### STUN Server
 
-编辑 `public/index.html` 中的 `configuration` 对象：
+Edit `configuration` in `public/index.html`:
 
 ```javascript
 const configuration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    // 可添加自己的STUN/TURN服务器
   ]
 };
 ```
 
-### 修改端口
+### Port
 
-在 `server.js` 或启动命令中修改：
+Modify in `server.js`:
 
 ```javascript
 const PORT = process.env.PORT || 3000;
 ```
 
-## 🐛 常见问题
+## ❓ FAQ
 
-**Q: 连接一直显示“等待配对”？**  
-A: 确保两个设备输入的房间号完全一致，且信令服务器正常运行。刷新页面后重试。
+**Q: Stuck on "Waiting for peer"?**  
+A: Ensure both devices use the same room code and the server is running. Refresh and retry.
 
-**Q: 手机和电脑无法建立连接？**  
-A: 请检查两者是否在同一个局域网（同一Wi-Fi或网段）。部分公共Wi-Fi可能隔离设备间通信，建议使用手机热点测试。
+**Q: Can't connect phone and PC?**  
+A: Verify both are on the same network. Some public Wi-Fi networks isolate devices—try mobile hotspot.
 
-**Q: 传输大文件时失败？**  
-A: 浏览器内存限制可能导致问题。本工具已将文件分块（16KB/块），但若文件超过2GB，建议使用专业工具。可尝试增加分块大小（修改 `CHUNK_SIZE` 常量）。
+**Q: Large file transfer fails?**  
+A: Browser memory limits may apply. This tool chunks files (16KB chunks). For files >2GB, consider specialized tools.
 
-**Q: 支持传输文件夹吗？**  
-A: 当前版本仅支持单文件。可多次选择文件发送。
+**Q: Folder transfer?**  
+A: Single files only in current version. Send multiple files separately.
 
-**Q: 是否支持互联网远程传输？**  
-A: 默认仅限局域网。如需公网传输，需要部署TURN服务器（本项目未包含），否则P2P打洞大概率失败。
+**Q: Remote/internet transfer?**  
+A: LAN only by default. Internet transfer requires a TURN server (not included).
 
-## 📄 开源协议
+## 📄 License
 
-MIT License。自由使用、修改、分发，但需保留版权声明。
+MIT License
 
-## 🤝 贡献
+## 🤝 Contributing
 
-欢迎提交Issue与Pull Request。若您觉得有用，请给个⭐Star支持！
+Issues and PRs welcome! Give a ⭐ if you find this useful.
 
 ---
 
-## 📝 附录：核心代码片段
+## 🔧 Appendix: Core Code
 
-### 前端 - 建立WebRTC连接（关键逻辑）
+### Frontend - WebRTC Setup
 
 ```javascript
-// 创建PeerConnection
 const pc = new RTCPeerConnection(configuration);
 
-// 监听ICE候选
 pc.onicecandidate = (event) => {
   if (event.candidate) {
     sendSignaling({ type: 'candidate', candidate: event.candidate });
   }
 };
 
-// 创建DataChannel（发起方）
 const dataChannel = pc.createDataChannel('fileTransfer');
 setupDataChannel(dataChannel);
 
-// 接收远端DataChannel（应答方）
 pc.ondatachannel = (event) => {
   setupDataChannel(event.channel);
 };
 ```
 
-### 后端 - 房间信令处理
+### Backend - Signaling
 
 ```javascript
 wss.on('connection', (ws) => {
@@ -209,12 +176,12 @@ wss.on('connection', (ws) => {
     const data = JSON.parse(message);
     switch (data.type) {
       case 'join':
-        // 加入房间逻辑，转发offer/answer/candidate
+        // Add client to room
         break;
       case 'offer':
       case 'answer':
       case 'candidate':
-        // 转发给同房间的其他客户端
+        // Forward to room peers
         break;
     }
   });
@@ -223,7 +190,6 @@ wss.on('connection', (ws) => {
 
 ---
 
-## 🎉 开始使用吧！
+## 🎉 Get Started
 
-将手机和电脑连接至同一网络，打开网页，体验如同AirDrop般的便捷文件传输！
-```
+Open the page on two devices, share files instantly!
