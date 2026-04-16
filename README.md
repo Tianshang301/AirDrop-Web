@@ -32,6 +32,21 @@
 ```
 
 airdrop-web/
+├── README.md              # 项目文档
+├── package.json           # 依赖及脚本
+├── server.js            # WebSocket信令服务器
+├── main.js              # Electron 主进程 (可选)
+├── public/
+│   ├── index.html       # 主页面
+│   ├── css/
+│   │   └── style.css   # 样式文件
+│   └── js/
+│       └── app.js      # 前端逻辑
+└── dist/                # 构建输出目录
+
+```
+
+airdrop-web/
 ├── README.md          # 项目文档
 ├── package.json       # 依赖及脚本
 ├── server.js          # WebSocket信令服务器

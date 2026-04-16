@@ -1,0 +1,834 @@
+const CHUNK_SIZE = 256 * 1024;
+const BUFFER_AHEAD = 32;
+const MAX_BUFFERED = 16 * 1024 * 1024;
+const MAX_RETRIES = 5;
+const PARALLEL_CHANNELS = 1;
+
+const configuration = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' }
+  ],
+  iceCandidatePoolSize: 10
+};
+
+const roomInput = document.getElementById('roomInput');
+const joinBtn = document.getElementById('joinBtn');
+const statusArea = document.getElementById('statusArea');
+const fileArea = document.getElementById('fileArea');
+const joinArea = document.getElementById('joinArea');
+const fileSelect = document.getElementById('fileSelect');
+const fileInput = document.getElementById('fileInput');
+const sendFileList = document.getElementById('sendFileList');
+const receivedList = document.getElementById('receivedList');
+const sendBtn = document.getElementById('sendBtn');
+const queueList = document.getElementById('queueList');
+const queueCount = document.getElementById('queueCount');
+const queueArea = document.getElementById('queueArea');
+const qrCodeArea = document.getElementById('qrCodeArea');
+const qrCodeContainer = document.getElementById('qrCodeContainer');
+const hideQrBtn = document.getElementById('hideQrBtn');
+
+let pc = null;
+let dataChannels = [];
+let ws = null;
+let roomId = '';
+let isInitiator = false;
+let receivingFileInfo = null;
+let receivedChunks = [];
+let isReceiving = false;
+let fileQueue = [];
+let isFileSending = false;
+let pendingFiles = [];
+let receivedBlobs = new Map();
+let activeTransfers = new Map();
+let writableStream = null;
+let receivingFileHandle = null;
+let receivingChunksByChannel = {};
+let receivingChannelFinished = {};
+let receivingChannelCount = PARALLEL_CHANNELS;
+let receivingProgressElements = new Map();
+let progressBroadcastInterval = null;
+let progressChannel = null;
+let serverIP = null;
+
+function isChromeOrEdge() {
+  const ua = navigator.userAgent.toLowerCase();
+  return /chrome|edg/.test(ua) && !/firefox|safari\//.test(ua);
+}
+
+function getWsUrl() {
+  const protocol = 'ws:';
+  const host = serverIP || window.location.hostname || 'localhost';
+  return `${protocol}//${host}:3000`;
+}
+
+function updateStatus(text, type) {
+  statusArea.textContent = text;
+  statusArea.className = `status ${type}`;
+  statusArea.classList.remove('hidden');
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function triggerDownload(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+window.reDownload = function(fileId, filename) {
+  const blob = receivedBlobs.get(fileId);
+  if (blob) {
+    const url = URL.createObjectURL(blob);
+    triggerDownload(url, filename);
+    URL.revokeObjectURL(url);
+  }
+};
+
+function updateQueueUI() {
+  queueList.innerHTML = '';
+  fileQueue.forEach((file, index) => {
+    const item = document.createElement('div');
+    item.className = 'queue-item';
+    item.innerHTML = `
+      <div class="queue-item-info">
+        <div class="queue-item-name">${escapeHtml(file.name)}</div>
+        <div class="queue-item-size">${formatSize(file.size)}</div>
+      </div>
+      <button class="queue-item-remove" onclick="removeFromQueue(${index})">删除</button>
+    `;
+    queueList.appendChild(item);
+  });
+  queueCount.textContent = `${fileQueue.length} 个文件`;
+  sendBtn.disabled = fileQueue.length === 0;
+  queueArea.classList.toggle('hidden', fileQueue.length === 0);
+}
+
+window.removeFromQueue = function(index) {
+  fileQueue.splice(index, 1);
+  updateQueueUI();
+};
+
+function addToQueue(files) {
+  for (const file of files) {
+    fileQueue.push(file);
+  }
+  updateQueueUI();
+}
+
+function connectWebSocket() {
+  return new Promise((resolve, reject) => {
+    ws = new WebSocket(getWsUrl());
+    ws.onopen = () => resolve();
+    ws.onerror = (err) => reject(err);
+    ws.onmessage = (event) => handleSignaling(JSON.parse(event.data));
+    ws.onclose = () => updateStatus('连接已断开', 'error');
+  });
+}
+
+async function joinRoom() {
+  roomId = roomInput.value.trim();
+  if (!roomId) { alert('请输入房间号'); return; }
+  joinBtn.disabled = true;
+  joinBtn.textContent = '连接中...';
+  try {
+    await connectWebSocket();
+    ws.send(JSON.stringify({ type: 'join', room: roomId }));
+    showQRCode(roomId);
+  } catch (err) {
+    updateStatus('连接服务器失败', 'error');
+    joinBtn.disabled = false;
+    joinBtn.textContent = '连接';
+  }
+}
+
+function showQRCode(room) {
+  qrCodeContainer.innerHTML = '';
+  const host = serverIP || window.location.hostname;
+  const url = `http://${host}:3000?room=${encodeURIComponent(room)}`;
+  new QRCode(qrCodeContainer, {
+    text: url,
+    width: 200,
+    height: 200,
+    colorDark: '#333333',
+    colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.M
+  });
+  qrCodeArea.classList.remove('hidden');
+}
+
+function hideQRCode() {
+  qrCodeArea.classList.add('hidden');
+  qrCodeContainer.innerHTML = '';
+}
+
+function checkUrlParam() {
+  const params = new URLSearchParams(window.location.search);
+  const room = params.get('room');
+  if (room) {
+    roomInput.value = room;
+    joinRoom();
+  }
+}
+
+function handleSignaling(data) {
+  switch (data.type) {
+    case 'waiting':
+      updateStatus('等待其他设备加入...', 'waiting');
+      break;
+    case 'peers':
+      isInitiator = true;
+      createPeerConnection();
+      updateStatus('正在建立连接...', 'waiting');
+      break;
+    case 'new-peer':
+      if (!pc) { isInitiator = false; createPeerConnection(); }
+      updateStatus('正在建立连接...', 'waiting');
+      break;
+    case 'offer':
+      if (!pc) createPeerConnection();
+      pc.setRemoteDescription(new RTCSessionDescription(data.offer))
+        .then(() => pc.createAnswer())
+        .then(answer => pc.setLocalDescription(answer))
+        .then(() => ws.send(JSON.stringify({ type: 'answer', answer: pc.localDescription })));
+      break;
+    case 'answer':
+      pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+      break;
+    case 'candidate':
+      if (pc && data.candidate) pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+      break;
+    case 'peer-left':
+      updateStatus('对方已离开，重新等待...', 'waiting');
+      break;
+  }
+}
+
+function createPeerConnection() {
+  pc = new RTCPeerConnection(configuration);
+  
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      ws.send(JSON.stringify({ type: 'candidate', candidate: event.candidate }));
+    }
+  };
+  
+  pc.onconnectionstatechange = () => {
+    console.log('Connection state:', pc.connectionState);
+    if (pc.connectionState === 'connected') {
+      updateStatus('已连接', 'connected');
+      joinArea.classList.add('hidden');
+      fileArea.classList.add('active');
+      hideQRCode();
+    } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      updateStatus('连接断开', 'error');
+      isFileSending = false;
+      pendingFiles = [];
+      activeTransfers.clear();
+    }
+  };
+  
+  pc.ondatachannel = (event) => {
+    const channelId = event.channel.id !== undefined ? event.channel.id : dataChannels.length;
+    event.channel._channelId = channelId;
+    dataChannels.push(event.channel);
+    setupDataChannel(event.channel, channelId);
+  };
+  
+  if (isInitiator) {
+    for (let i = 0; i < PARALLEL_CHANNELS; i++) {
+      const dc = pc.createDataChannel(`fileTransfer-${i}`, { 
+        ordered: false,
+        id: i
+      });
+      dc._channelId = i;
+      dataChannels.push(dc);
+      setupDataChannel(dc, i);
+    }
+    
+    const progressCh = pc.createDataChannel('progress', { 
+      ordered: true,
+      id: PARALLEL_CHANNELS
+    });
+    progressCh._channelId = PARALLEL_CHANNELS;
+    dataChannels.push(progressCh);
+    setupDataChannel(progressCh, PARALLEL_CHANNELS);
+    
+    pc.createOffer({ iceRestart: true })
+      .then(offer => pc.setLocalDescription(offer))
+      .then(() => ws.send(JSON.stringify({ type: 'offer', offer: pc.localDescription })))
+      .catch(err => console.error('Failed to create offer:', err));
+  }
+}
+
+function setupDataChannel(channel, channelId) {
+  channel._channelId = channelId;
+  channel.bufferedAmountLowThreshold = 512 * 1024;
+  channel.onopen = () => {
+    console.log('DataChannel ' + channelId + ' opened');
+    if (channelId === PARALLEL_CHANNELS) {
+      progressChannel = channel;
+      console.log('Progress channel set:', channel);
+    }
+    const totalChannels = PARALLEL_CHANNELS + 1;
+    if (dataChannels.filter(c => c.readyState === 'open').length >= totalChannels) {
+      updateStatus('已连接', 'connected');
+    }
+  };
+  channel.onmessage = (event) => handleReceiveData(event.data, channelId);
+  channel.onerror = (error) => {
+    console.error('DataChannel ' + channelId + ' error:', error);
+    updateStatus('传输通道错误', 'error');
+  };
+  channel.onclose = () => {
+    console.log('DataChannel closed');
+    updateStatus('连接已断开', 'error');
+  };
+}
+
+async function handleReceiveData(data, channelId) {
+  if (typeof data === 'string') {
+    const msg = JSON.parse(data);
+    switch (msg.type) {
+      case 'file-start':
+        receivingFileInfo = {
+          name: msg.name,
+          size: msg.size,
+          mimeType: msg.mimeType || 'application/octet-stream',
+          fileId: msg.fileId
+        };
+        isReceiving = true;
+        writableStream = null;
+        receivingFileHandle = null;
+        receivingChunksByChannel = {};
+        receivingChannelFinished = {};
+        receivingChannelCount = msg.channelCount || PARALLEL_CHANNELS;
+
+        if (isChromeOrEdge() && 'showSaveFilePicker' in window) {
+          try {
+            receivingFileHandle = await window.showSaveFilePicker({
+              suggestedName: receivingFileInfo.name
+            });
+            writableStream = await receivingFileHandle.createWritable();
+            updateStatus(`正在接收: ${receivingFileInfo.name} (流式写入)`, 'waiting');
+          } catch (err) {
+            if (err.name !== 'AbortError') {
+              console.error('showSaveFilePicker error:', err);
+            }
+            updateStatus('用户取消保存，改为内存接收模式', 'waiting');
+            createReceiveProgressUI(receivingFileInfo.fileId, receivingFileInfo.name, receivingFileInfo.size);
+          }
+        } else {
+          updateStatus(`正在接收: ${receivingFileInfo.name}`, 'waiting');
+          createReceiveProgressUI(receivingFileInfo.fileId, receivingFileInfo.name, receivingFileInfo.size);
+        }
+        
+        progressBroadcastInterval = setInterval(() => {
+          if (receivingFileInfo && isReceiving) {
+            const totalReceived = Object.values(receivingChunksByChannel)
+              .reduce((sum, chunks) => sum + chunks.reduce((s, c) => s + (c.data.byteLength || c.data.size), 0), 0);
+            const receivedSize = receivingFileInfo.receivedSize || totalReceived;
+            
+            const sendCh = progressChannel && progressChannel.readyState === 'open' 
+              ? progressChannel 
+              : dataChannels.find(c => c.readyState === 'open');
+            
+            if (sendCh) {
+              sendCh.send(JSON.stringify({
+                type: 'progress-update',
+                fileId: receivingFileInfo.fileId,
+                bytesReceived: receivedSize,
+                totalSize: receivingFileInfo.size
+              }));
+            }
+          }
+        }, 200);
+        break;
+        
+      case 'file-end':
+        receivingChannelFinished[msg.channelId] = true;
+        
+        const allFinished = Object.keys(receivingChannelFinished).length >= receivingChannelCount &&
+          Object.values(receivingChannelFinished).every(v => v === true);
+        
+        if (allFinished) {
+          if (progressBroadcastInterval) {
+            clearInterval(progressBroadcastInterval);
+            progressBroadcastInterval = null;
+          }
+          
+          if (writableStream) {
+            try {
+              await writableStream.close();
+              updateReceiveProgress(receivingFileInfo.fileId, receivingFileInfo.size, receivingFileInfo.size);
+              const progressEl = receivingProgressElements.get(receivingFileInfo.fileId);
+              if (progressEl) {
+                const parentEl = progressEl.fill.closest('.received-item');
+                if (parentEl) {
+                  const headerDiv = parentEl.querySelector('div');
+                  if (headerDiv && !headerDiv.querySelector('.download-btn')) {
+                    headerDiv.innerHTML = `
+                      <div>
+                        <div class="file-name">${escapeHtml(receivingFileInfo.name)}</div>
+                        <div class="file-size">${formatSize(receivingFileInfo.size)} (已保存到磁盘)</div>
+                      </div>
+                    `;
+                  }
+                }
+              }
+              updateStatus('已收到文件: ' + receivingFileInfo.name, 'connected');
+            } catch (err) {
+              console.error('writableStream.close error:', err);
+            }
+          } else {
+            const allChunks = [];
+            for (const chId in receivingChunksByChannel) {
+              allChunks.push(...receivingChunksByChannel[chId]);
+            }
+            allChunks.sort((a, b) => a.offset - b.offset);
+            const sortedData = allChunks.map(c => c.data);
+            if (sortedData.length > 0) {
+              const blob = new Blob(sortedData, { type: receivingFileInfo.mimeType });
+              downloadFile(blob, receivingFileInfo.name, receivingFileInfo.size, receivingFileInfo.fileId);
+            }
+          }
+
+          const channel = dataChannels.find(c => c.readyState === 'open');
+          if (channel) {
+            channel.send(JSON.stringify({ type: 'file-received', fileId: msg.fileId }));
+          }
+          isReceiving = false;
+          receivingChunksByChannel = {};
+          receivingChannelFinished = {};
+          receivingFileInfo = null;
+          writableStream = null;
+          receivingFileHandle = null;
+          updateStatus('已连接', 'connected');
+        }
+        break;
+        
+      case 'file-received':
+        break;
+        
+      case 'progress-update':
+        const percent = Math.min((msg.bytesReceived / msg.totalSize) * 100, 100).toFixed(1);
+        const fill = document.getElementById(`progress-${msg.fileId}`);
+        if (fill) fill.style.width = percent + '%';
+        
+        const receivedMB = (msg.bytesReceived / 1024 / 1024).toFixed(1);
+        const totalMB = (msg.totalSize / 1024 / 1024).toFixed(1);
+        const textElem = document.getElementById(`progress-text-${msg.fileId}`);
+        if (textElem) {
+          textElem.textContent = `发送中: ${receivedMB}MB / ${totalMB}MB (${percent}%)`;
+        }
+        break;
+    }
+  } else if (data instanceof ArrayBuffer || data instanceof Blob) {
+    if (isReceiving && receivingFileInfo) {
+      const chunkData = data;
+      const chunkSize = chunkData.byteLength || chunkData.size;
+      
+      if (writableStream) {
+        receivingFileInfo.receivedSize = (receivingFileInfo.receivedSize || 0) + chunkSize;
+        try {
+          await writableStream.write(chunkData);
+          const percent = ((receivingFileInfo.receivedSize / receivingFileInfo.size) * 100).toFixed(1);
+          updateStatus(`接收中: ${receivingFileInfo.name} (${percent}%)`, 'waiting');
+          updateReceiveProgress(receivingFileInfo.fileId, receivingFileInfo.receivedSize, receivingFileInfo.size);
+        } catch (err) {
+          console.error('writableStream.write error:', err);
+          if (!receivingChunksByChannel[channelId]) {
+            receivingChunksByChannel[channelId] = [];
+          }
+          receivingChunksByChannel[channelId].push({
+            data: chunkData,
+            offset: receivingFileInfo.receivedSize - chunkSize
+          });
+        }
+      } else {
+        receivingFileInfo.receivedSize = (receivingFileInfo.receivedSize || 0) + chunkSize;
+        if (!receivingChunksByChannel[channelId]) {
+          receivingChunksByChannel[channelId] = [];
+        }
+        receivingChunksByChannel[channelId].push({
+          data: chunkData,
+          offset: receivingFileInfo.receivedSize - chunkSize
+        });
+        const totalReceived = Object.values(receivingChunksByChannel)
+          .reduce((sum, chunks) => sum + chunks.reduce((s, c) => s + (c.data.byteLength || c.data.size), 0), 0);
+        const percent = ((totalReceived / receivingFileInfo.size) * 100).toFixed(1);
+        updateStatus(`接收中: ${receivingFileInfo.name} (${percent}%)`, 'waiting');
+        updateReceiveProgress(receivingFileInfo.fileId, totalReceived, receivingFileInfo.size);
+      }
+    }
+  }
+}
+
+function downloadFile(blob, filename, fileSize, fileId) {
+  receivedBlobs.set(fileId, blob);
+  
+  const existingProgressEl = receivingProgressElements.get(fileId);
+  if (existingProgressEl) {
+    const parentEl = existingProgressEl.fill.closest('.received-item');
+    if (parentEl) {
+      const headerDiv = parentEl.querySelector('div');
+      if (headerDiv) {
+        headerDiv.innerHTML = `
+          <div>
+            <div class="file-name">${escapeHtml(filename)}</div>
+            <div class="file-size">${formatSize(fileSize)}</div>
+          </div>
+          <button class="download-btn" onclick="reDownload('${fileId}', '${escapeHtml(filename)}')">下载</button>
+        `;
+      }
+      existingProgressEl.text.textContent = `已接收完成`;
+    }
+  } else {
+    const item = document.createElement('div');
+    item.className = 'received-item';
+    item.style.flexDirection = 'column';
+    item.style.alignItems = 'stretch';
+    item.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <div class="file-name">${escapeHtml(filename)}</div>
+          <div class="file-size">${formatSize(fileSize)}</div>
+        </div>
+        <button class="download-btn" onclick="reDownload('${fileId}', '${escapeHtml(filename)}')">下载</button>
+      </div>
+      <div class="progress-container">
+        <div class="progress-bar"><div class="progress-fill" id="recv-progress-${fileId}"></div></div>
+        <div class="progress-text" id="recv-progress-text-${fileId}">已接收完成</div>
+      </div>
+    `;
+    receivedList.appendChild(item);
+    receivingProgressElements.set(fileId, {
+      fill: item.querySelector(`#recv-progress-${fileId}`),
+      text: item.querySelector(`#recv-progress-text-${fileId}`)
+    });
+  }
+  updateStatus('已收到文件: ' + filename, 'connected');
+}
+
+function createReceiveProgressUI(fileId, filename, fileSize) {
+  if (receivingProgressElements.has(fileId)) return;
+  const item = document.createElement('div');
+  item.className = 'received-item';
+  item.style.flexDirection = 'column';
+  item.style.alignItems = 'stretch';
+  item.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div>
+        <div class="file-name">${escapeHtml(filename)}</div>
+        <div class="file-size">${formatSize(fileSize)}</div>
+      </div>
+    </div>
+    <div class="progress-container">
+      <div class="progress-bar"><div class="progress-fill" id="recv-progress-${fileId}"></div></div>
+      <div class="progress-text" id="recv-progress-text-${fileId}">等待接收...</div>
+    </div>
+  `;
+  receivedList.appendChild(item);
+  receivingProgressElements.set(fileId, {
+    fill: item.querySelector(`#recv-progress-${fileId}`),
+    text: item.querySelector(`#recv-progress-text-${fileId}`)
+  });
+}
+
+function updateReceiveProgress(fileId, received, total) {
+  const progressEl = receivingProgressElements.get(fileId);
+  if (progressEl) {
+    const percent = Math.min((received / total) * 100, 100).toFixed(1);
+    const receivedMB = (received / 1024 / 1024).toFixed(1);
+    const totalMB = (total / 1024 / 1024).toFixed(1);
+    progressEl.fill.style.width = percent + '%';
+    progressEl.text.textContent = `${receivedMB}MB / ${totalMB}MB (${percent}%)`;
+  }
+}
+
+function sendQueuedFiles() {
+  if (fileQueue.length === 0) return;
+  if (dataChannels.length === 0 || !dataChannels.some(c => c.readyState === 'open')) {
+    alert('连接未建立');
+    return;
+  }
+  pendingFiles = [...fileQueue];
+  fileQueue = [];
+  updateQueueUI();
+  sendNextFile();
+}
+
+function sendNextFile() {
+  if (pendingFiles.length === 0) {
+    isFileSending = false;
+    return;
+  }
+  const file = pendingFiles.shift();
+  sendFile(file);
+}
+
+function sendFile(file) {
+  if (dataChannels.length === 0 || !dataChannels.some(c => c.readyState === 'open')) {
+    alert('连接未建立');
+    isFileSending = false;
+    return;
+  }
+  
+  isFileSending = true;
+  const fileId = Date.now().toString(36).substr(2, 9);
+  const totalSize = file.size;
+  const channels = dataChannels.filter(c => c.readyState === 'open').slice(0, PARALLEL_CHANNELS);
+  
+  if (channels.length === 0) {
+    alert('没有可用的数据通道');
+    return;
+  }
+
+  const rangeSize = Math.ceil(totalSize / channels.length);
+  const channelRanges = channels.map((ch, i) => ({
+    channel: ch,
+    channelId: ch._channelId,
+    startOffset: i * rangeSize,
+    endOffset: Math.min((i + 1) * rangeSize, totalSize),
+    offset: i * rangeSize,
+    bytesSent: 0,
+    finished: false
+  }));
+  
+  const fileItem = document.createElement('div');
+  fileItem.className = 'file-item';
+  fileItem.id = `file-${fileId}`;
+  fileItem.innerHTML = `
+    <div class="file-info">
+      <div>
+        <div class="file-name">${escapeHtml(file.name)}</div>
+        <div class="file-size">${formatSize(totalSize)}</div>
+      </div>
+    </div>
+    <div class="progress-container">
+      <div class="progress-bar"><div class="progress-fill" id="progress-${fileId}"></div></div>
+      <div class="progress-text" id="progress-text-${fileId}">准备发送...</div>
+    </div>
+  `;
+  sendFileList.appendChild(fileItem);
+
+  const startTime = performance.now();
+  let finishedChannels = 0;
+
+  channels.forEach(ch => {
+    ch.bufferedAmountLowThreshold = 512 * 1024;
+    let drainResolve = null;
+    ch._drainResolve = null;
+    ch.onbufferedamountlow = () => {
+      if (ch._drainResolve) {
+        ch._drainResolve();
+        ch._drainResolve = null;
+      }
+    };
+  });
+
+  function waitForDrain(channel) {
+    if (channel.bufferedAmount <= channel.bufferedAmountLowThreshold) {
+      return Promise.resolve();
+    }
+    return new Promise(resolve => {
+      channel._drainResolve = resolve;
+    });
+  }
+
+  function sendFileEnd(range) {
+    range.channel.send(JSON.stringify({
+      type: 'file-end',
+      fileId: fileId,
+      channelId: range.channelId,
+      size: range.endOffset - range.startOffset,
+      name: file.name
+    }));
+  }
+
+  async function sendLoopForChannel(range) {
+    const { channel, startOffset, endOffset } = range;
+    let offset = range.offset;
+    const chunks = [];
+    
+    async function readNextChunk() {
+      if (offset >= endOffset) return null;
+      return new Promise((resolve) => {
+        const slice = file.slice(offset, Math.min(offset + CHUNK_SIZE, endOffset));
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const data = e.target.result;
+          const curOffset = offset;
+          offset += CHUNK_SIZE;
+          resolve({ data, offset: curOffset });
+        };
+        reader.onerror = () => resolve(null);
+        reader.readAsArrayBuffer(slice);
+      });
+    }
+
+    while (!range.finished && channel.readyState === 'open') {
+      while (chunks.length < BUFFER_AHEAD && offset < endOffset) {
+        const chunk = await readNextChunk();
+        if (chunk) chunks.push(chunk);
+        else break;
+      }
+      
+      if (chunks.length > 0) {
+        const chunk = chunks[0];
+        try {
+          channel.send(chunk.data);
+          chunks.shift();
+          range.bytesSent += chunk.data.byteLength;
+        } catch (err) {
+          if (err.name === 'OperationError') {
+            await waitForDrain(channel);
+          } else {
+            throw err;
+          }
+        }
+      } else if (offset >= endOffset && chunks.length === 0) {
+        sendFileEnd(range);
+        range.finished = true;
+        finishedChannels++;
+        
+        if (finishedChannels === channels.length) {
+          setTimeout(() => {
+            const textElem = document.getElementById(`progress-text-${fileId}`);
+            if (textElem) {
+              const elapsed = (performance.now() - startTime) / 1000;
+              const speedMBps = elapsed > 0 ? (totalSize / 1024 / 1024 / elapsed).toFixed(1) : '0';
+              textElem.textContent = `发送完成 (平均速度: ${speedMBps}MB/s)`;
+            }
+            isFileSending = false;
+            setTimeout(() => sendNextFile(), 50);
+          }, 1000);
+        }
+        break;
+      } else {
+        await waitForDrain(channel);
+      }
+    }
+  }
+
+  channelRanges.forEach(range => {
+    if (range.startOffset < totalSize) {
+      range.channel.send(JSON.stringify({
+        type: 'file-start',
+        name: file.name,
+        size: totalSize,
+        mimeType: file.type || 'application/octet-stream',
+        fileId: fileId,
+        channelId: range.channelId,
+        channelCount: channels.length,
+        startOffset: range.startOffset,
+        endOffset: range.endOffset
+      }));
+      sendLoopForChannel(range);
+    }
+  });
+}
+
+fileSelect.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  fileSelect.classList.add('dragover');
+});
+fileSelect.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  fileSelect.classList.remove('dragover');
+});
+fileSelect.addEventListener('drop', (e) => {
+  e.preventDefault();
+  fileSelect.classList.remove('dragover');
+  const files = e.dataTransfer.files;
+  if (files.length > 0) addToQueue(files);
+});
+fileSelect.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => {
+  if (e.target.files.length > 0) {
+    addToQueue(e.target.files);
+    fileInput.value = '';
+  }
+});
+
+document.addEventListener('paste', (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  
+  const files = [];
+  for (const item of items) {
+    if (item.kind === 'file') {
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+  
+  if (files.length > 0) {
+    addToQueue(files);
+    updateStatus('已通过粘贴添加 ' + files.length + ' 个文件', 'connected');
+  }
+});
+
+sendBtn.addEventListener('click', sendQueuedFiles);
+joinBtn.addEventListener('click', joinRoom);
+roomInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') joinRoom(); });
+hideQrBtn.addEventListener('click', hideQRCode);
+
+checkUrlParam();
+
+fetch('/api/ip')
+  .then(r => r.json())
+  .then(data => {
+    if (data.ips && data.ips.length > 0) {
+      serverIP = data.ips[0].address;
+      updateStatus(`局域网: http://${serverIP}:3000`, 'connected');
+    }
+  })
+  .catch(err => {
+    console.error('Failed to get server IP:', err);
+  })
+  .finally(() => {
+    if (!serverIP) {
+      ipInputArea.classList.remove('hidden');
+      roomInput.disabled = true;
+      joinBtn.disabled = true;
+    }
+  });
+
+const serverIpInput = document.getElementById('serverIpInput');
+const setIpBtn = document.getElementById('setIpBtn');
+
+setIpBtn.addEventListener('click', () => {
+  const ip = serverIpInput.value.trim();
+  const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+  if (!ip || !ipRegex.test(ip)) {
+    alert('请输入有效的IP地址');
+    return;
+  }
+  serverIP = ip;
+  ipInputArea.classList.add('hidden');
+  roomInput.disabled = false;
+  joinBtn.disabled = false;
+  updateStatus(`已连接: http://${serverIP}:3000`, 'connected');
+  joinRoom();
+});
+
+serverIpInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') setIpBtn.click(); });
